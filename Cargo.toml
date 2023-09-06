@@ -1,6 +1,6 @@
 [package]
 name = "my_bash_history_combiner"
-version = "0.0.1"
+version = "0.0.2"
 description = "Combines a Bash session history with a single history with dups and ignores erased."
 authors = ["Derick Eddington"]
 license = "Unlicense"

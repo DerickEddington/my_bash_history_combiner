@@ -13,7 +13,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let input_files: Vec<File> = env::args().skip(1).map(File::open).collect::<Result<_, _>>()?;
 
     fn default_ignores_filename() -> Result<PathBuf, env::VarError> {
-        env::var("HOME").map(|home| PathBuf::from(home).join(".bash_history.d/.ignores"))
+        env::var("HOME").map(|home| {
+            PathBuf::from(home).join(".config/my/bash/interactive/history/ignores.regexes")
+        })
     }
     let ignores_filename =
         env::var("MY_BASH_HISTORY_COMBINER_IGNORES").map(PathBuf::from).or_else(|e| match e {
