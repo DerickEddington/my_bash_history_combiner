@@ -71,12 +71,16 @@ mod record {
 
     #[derive(Copy, Clone, Debug, Eq, PartialEq)]
     pub struct Record<'l> {
-        pub entire:  &'l str,
-        pub command: &'l str,
+        pub entire:          &'l str,
+        pub command:         &'l str,
+        pub timestamp:       &'l str,
+        pub command_trimmed: &'l str,
     }
 
     impl Display for Record<'_> {
-        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result { f.write_str(self.entire) }
+        fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+            write!(f, "{}\n{}\n", self.timestamp, self.command_trimmed)
+        }
     }
 }
 
@@ -115,11 +119,12 @@ mod history {
                 Some({
                     let next;
                     if let Some(cmd_start) = advance_past::timestamp(self.cur) {
+                        let timestamp = &self.cur[.. cmd_start - 1];
                         if let Some(cmd_end) = advance_past::command(self.cur, cmd_start) {
-                            next = Ok(Record {
-                                entire:  &self.cur[.. cmd_end],
-                                command: &self.cur[cmd_start .. cmd_end - 1],
-                            });
+                            let entire = &self.cur[.. cmd_end];
+                            let command = &self.cur[cmd_start .. cmd_end - 1];
+                            let command_trimmed = command.trim();
+                            next = Ok(Record { entire, command, timestamp, command_trimmed });
                             self.cur = &self.cur[cmd_end ..];
                         } else {
                             next = Err(&self.cur[cmd_start ..])
@@ -166,27 +171,85 @@ mod history {
             check("#", [Err("malformed: \"#\"")]);
             check("#1", [Err("malformed: \"#1\"")]);
             check("#1\n", [Err("malformed: \"\"")]);
-            check("#1\n\n", [Ok(Record { entire: "#1\n\n", command: "" })]);
+            check("#1\n ", [Err("malformed: \" \"")]);
+            check("#1\n\n", [Ok(Record {
+                entire:          "#1\n\n",
+                command:         "",
+                timestamp:       "#1",
+                command_trimmed: "",
+            })]);
+            check("#1\n \t \n", [Ok(Record {
+                entire:          "#1\n \t \n",
+                command:         " \t ",
+                timestamp:       "#1",
+                command_trimmed: "",
+            })]);
             check("#23\nfoo bar\n#456\nzab\n", [
-                Ok(Record { entire: "#23\nfoo bar\n", command: "foo bar" }),
-                Ok(Record { entire: "#456\nzab\n", command: "zab" }),
+                Ok(Record {
+                    entire:          "#23\nfoo bar\n",
+                    command:         "foo bar",
+                    timestamp:       "#23",
+                    command_trimmed: "foo bar",
+                }),
+                Ok(Record {
+                    entire:          "#456\nzab\n",
+                    command:         "zab",
+                    timestamp:       "#456",
+                    command_trimmed: "zab",
+                }),
+            ]);
+            check("#456\n zab\r\n#23\n\nfoo\tbar \n", [
+                Ok(Record {
+                    entire:          "#456\n zab\r\n",
+                    command:         " zab\r",
+                    timestamp:       "#456",
+                    command_trimmed: "zab",
+                }),
+                Ok(Record {
+                    entire:          "#23\n\nfoo\tbar \n",
+                    command:         "\nfoo\tbar ",
+                    timestamp:       "#23",
+                    command_trimmed: "foo\tbar",
+                }),
             ]);
             check("#7\nA\n#8\nB", [
-                Ok(Record { entire: "#7\nA\n", command: "A" }),
+                Ok(Record {
+                    entire:          "#7\nA\n",
+                    command:         "A",
+                    timestamp:       "#7",
+                    command_trimmed: "A",
+                }),
                 Err("malformed: \"B\""),
             ]);
             check("#7\nA\n#8\nB\n#9", [
-                Ok(Record { entire: "#7\nA\n", command: "A" }),
+                Ok(Record {
+                    entire:          "#7\nA\n",
+                    command:         "A",
+                    timestamp:       "#7",
+                    command_trimmed: "A",
+                }),
                 Err("malformed: \"B\"..."),
             ]);
             check("#7\nA\n#8\nB\n#9\n", [
-                Ok(Record { entire: "#7\nA\n", command: "A" }),
-                Ok(Record { entire: "#8\nB\n", command: "B" }),
+                Ok(Record {
+                    entire:          "#7\nA\n",
+                    command:         "A",
+                    timestamp:       "#7",
+                    command_trimmed: "A",
+                }),
+                Ok(Record {
+                    entire:          "#8\nB\n",
+                    command:         "B",
+                    timestamp:       "#8",
+                    command_trimmed: "B",
+                }),
                 Err("malformed: \"\""),
             ]);
-            check("#12345\n multi\nline \n ...\n", [Ok(Record {
-                entire:  "#12345\n multi\nline \n ...\n",
-                command: " multi\nline \n ...",
+            check("#12345\n multi\nline \n ...\n\n", [Ok(Record {
+                entire:          "#12345\n multi\nline \n ...\n\n",
+                command:         " multi\nline \n ...\n",
+                timestamp:       "#12345",
+                command_trimmed: "multi\nline \n ...",
             })]);
         }
     }
@@ -288,7 +351,7 @@ mod pruned {
             for record in noticed_records {
                 let index = kept.len();
                 kept.push(Some(record));
-                match seen.entry(record.command) {
+                match seen.entry(record.command_trimmed) {
                     Entry::Occupied(mut entry) => {
                         let prior_index = entry.insert(index);
                         kept[prior_index] = None;
@@ -332,29 +395,31 @@ mod tests {
           #0\n\
           no-longer --interesting\n\
           #1\n\
-          echo first\n\
+          \u{20}echo first\n\
           #22\n\
           #666\n\
           #333\n\
-          cargo help\n\
+          cargo help \n\
         ";
         #[rustfmt::skip]
         const A_SESSION: &str = "\
           #4444\n\
-          echo fourth\n\
+          echo fourth \n\
           #55555\n\
-          cargo help\n\
+          \u{20}cargo help\n\
           #666666\n\
-          #666\n\
+          #666 \n\
           #7777777\n\
           boring\n\
           #88888888\n\
+          \n\
           for I in $(seq 5)  # multi-line\n\
           do\n\
             echo $I\n\
           done\n\
+          \n\
           #999999999\n\
-          extra-boring --times=10\n\
+          \u{20}extra-boring --times=10 \t \n\
           #0000000000\n\
           cat <<<'last'\n\
         ";

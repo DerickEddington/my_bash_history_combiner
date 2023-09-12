@@ -19,7 +19,7 @@ checksum = "8f232d6ef707e1956a43342693d2a31e72989554d58299d7a88738cc95b0d35c"
 
 [[package]]
 name = "my_bash_history_combiner"
-version = "0.0.2"
+version = "0.0.3"
 dependencies = [
  "regex",
 ]
